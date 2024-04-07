@@ -1,0 +1,35 @@
+# Cargo.toml
+
+[package]
+name = "tcp-mitm"
+version = "0.1.0"
+authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
+description = "Generic TCP man-in-the-middle proxy with a tap"
+repository = "https://github.com/sjm42/tcp-mitm"
+readme = "README.md"
+keywords = ["tcp", "proxy", "tap"]
+license = "MIT"
+edition = "2021"
+resolver = "2"
+
+
+[dependencies]
+anyhow = "1"
+bytes = "1"
+chrono = "0"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0"
+log = "0"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0", features = ["full"] }
+
+
+[build-dependencies]
+build-data = "0.1"
+
+
+[profile.release]
+lto = "fat"
+opt-level = 3
+
+# EOF
