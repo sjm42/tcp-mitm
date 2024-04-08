@@ -1,11 +1,12 @@
 // startup.rs
 
 use std::env;
+use std::net::SocketAddr;
 
 use clap::Parser;
 use log::*;
 
-#[derive(Clone, Debug, Default, Parser)]
+#[derive(Clone, Debug, Parser)]
 pub struct OptsCommon {
     #[arg(short, long)]
     pub debug: bool,
@@ -13,11 +14,11 @@ pub struct OptsCommon {
     pub trace: bool,
 
     #[arg(long)]
-    pub listen: String,
+    pub listen: SocketAddr,
     #[arg(long)]
-    pub server: String,
+    pub server: SocketAddr,
     #[arg(long)]
-    pub tap: String,
+    pub tap: SocketAddr,
 }
 
 impl OptsCommon {
