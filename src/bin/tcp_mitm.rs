@@ -58,7 +58,7 @@ async fn run_mitm(opts: OptsCommon) -> anyhow::Result<()> {
 
 async fn handle_client(
     opts: OptsCommon,
-    client: net::TcpStream,
+    client: TcpStream,
     addr: SocketAddr,
 ) -> anyhow::Result<()> {
     info!("Client connection from {addr:?}");
@@ -70,12 +70,12 @@ async fn handle_client(
 
     let serv_a = opts.server;
     info!("Connecting to server {serv_a}...");
-    let (mut serv_r, serv_w) = net::TcpStream::connect(serv_a).await?.into_split();
+    let (mut serv_r, serv_w) = TcpStream::connect(serv_a).await?.into_split();
     info!("Server connected.");
 
     let tap_a = opts.tap;
     info!("Connecting to tap {tap_a}...");
-    let tap = net::TcpStream::connect(tap_a).await?;
+    let tap = TcpStream::connect(tap_a).await?;
     info!("Tap connected.");
 
     let (client_tx, client_rx) = mpsc::channel(CHANSZ);
