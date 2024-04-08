@@ -73,7 +73,6 @@ async fn handle_client(
 ) -> anyhow::Result<()> {
     info!("#{i} client connection from {addr:?}");
 
-    let mut buf = [0; BUFSZ];
     let (mut client_r, client_w) = client.into_split();
 
     info!("#{i} connecting to server {serv}...");
@@ -104,30 +103,37 @@ async fn handle_client(
     tokio::spawn(run_tcp_writer(format!("servW #{i}"), serv_rx, serv_w));
     tokio::spawn(handle_tap(format!("tap #{i}"), tap_rx, tap));
 
+    // https://docs.rs/tokio/1.37.0/tokio/macro.select.html#cancellation-safety
+
+    // we don't need to use .readable() at tokio::select!() top level entries
+    // because read() is already cancel safe
+
+    let mut buf_c = [0; BUFSZ];
+    let mut buf_s = [0; BUFSZ];
     loop {
         tokio::select! {
-            Ok(_) = client_r.readable() => {
-                let n = client_r.read(&mut buf).await?;
+            res = client_r.read(&mut buf_c) => {
+                let n = res?;
                 if n == 0 {
                     info!("#{i} client disconnected: {addr:?}");
                     return Ok(());
                 }
 
                 debug!("#{i} client read {n}");
-                serv_tx.send(buf[0..n].to_owned()).await?;
-                tap_tx.send(buf[0..n].to_owned()).await?;
+                serv_tx.send(buf_c[0..n].to_owned()).await?;
+                tap_tx.send(buf_c[0..n].to_owned()).await?;
             }
 
-            Ok(_) = serv_r.readable() => {
-                let n = serv_r.read(&mut buf).await?;
+            res = serv_r.read(&mut buf_s) => {
+                let n = res?;
                 if n == 0 {
                     info!("#{i} server disconnected.");
                     return Ok(());
                 }
 
                 debug!("#{i} server read {n}");
-                client_tx.send(buf[0..n].to_owned()).await?;
-                tap_tx.send(buf[0..n].to_owned()).await?;
+                client_tx.send(buf_s[0..n].to_owned()).await?;
+                tap_tx.send(buf_s[0..n].to_owned()).await?;
             }
 
             else => {
