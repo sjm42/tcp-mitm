@@ -47,4 +47,5 @@ pub fn start_pgm(opts: &OptsCommon, desc: &str) {
     debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
 }
+
 // EOF

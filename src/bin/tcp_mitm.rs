@@ -12,7 +12,8 @@ use tokio::sync::mpsc;
 use tcp_mitm::*;
 
 const BUFSZ: usize = 65536;
-const CHANSZ: usize = 256;
+const CHANSZ: usize = 1024;
+
 
 fn main() -> anyhow::Result<()> {
     let opts = OptsCommon::parse();
@@ -23,7 +24,7 @@ fn main() -> anyhow::Result<()> {
         .build()?;
 
     runtime.block_on(async move {
-        if let Err(e) = run_mitm(opts).await {
+        if let Err(e) = run_mitm(&opts).await {
             error!("Error: {}", e);
         }
     });
@@ -32,9 +33,11 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_mitm(opts: OptsCommon) -> anyhow::Result<()> {
-    let listener = net::TcpListener::bind(&opts.listen).await?;
-    info!("Listening on {}", &opts.listen);
+
+async fn run_mitm(opts: &OptsCommon) -> anyhow::Result<()> {
+    let listen = &opts.listen;
+    info!("Listening on {listen}...");
+    let listener = net::TcpListener::bind(&listen).await?;
 
     loop {
         let (sock, addr) = match listener.accept().await {
@@ -45,9 +48,10 @@ async fn run_mitm(opts: OptsCommon) -> anyhow::Result<()> {
             Ok(x) => x,
         };
 
-        let o = opts.clone();
+        let serv = opts.server.clone();
+        let tap = opts.tap.clone();
         tokio::spawn(async move {
-            let ret = handle_client(o, sock, addr).await;
+            let ret = handle_client(sock, addr, serv, tap).await;
             if let Err(e) = ret {
                 // log errors
                 error!("client error: {e:?}");
@@ -57,9 +61,10 @@ async fn run_mitm(opts: OptsCommon) -> anyhow::Result<()> {
 }
 
 async fn handle_client(
-    opts: OptsCommon,
     client: TcpStream,
     addr: SocketAddr,
+    serv: String,
+    tap: String,
 ) -> anyhow::Result<()> {
     info!("Client connection from {addr:?}");
 
@@ -68,14 +73,12 @@ async fn handle_client(
 
     let (mut client_r, client_w) = client.into_split();
 
-    let serv_a = opts.server;
-    info!("Connecting to server {serv_a}...");
-    let (mut serv_r, serv_w) = TcpStream::connect(serv_a).await?.into_split();
+    info!("Connecting to server {serv}...");
+    let (mut serv_r, serv_w) = TcpStream::connect(serv).await?.into_split();
     info!("Server connected.");
 
-    let tap_a = opts.tap;
-    info!("Connecting to tap {tap_a}...");
-    let tap = TcpStream::connect(tap_a).await?;
+    info!("Connecting to tap {tap}...");
+    let tap = TcpStream::connect(tap).await?;
     info!("Tap connected.");
 
     let (client_tx, client_rx) = mpsc::channel(CHANSZ);
@@ -88,7 +91,7 @@ async fn handle_client(
 
     loop {
         tokio::select! {
-                res = client_r.read(&mut buf_c) => {
+            res = client_r.read(&mut buf_c) => {
                 let n = res?;
                 if n == 0 {
                     info!("Client disconnected: {addr:?}");
@@ -115,6 +118,7 @@ async fn handle_client(
     }
 }
 
+
 async fn run_tcp_writer(
     mut c: mpsc::Receiver<Vec<u8>>,
     mut w: OwnedWriteHalf,
@@ -124,6 +128,7 @@ async fn run_tcp_writer(
     }
     Ok(())
 }
+
 
 async fn handle_tap(mut c: mpsc::Receiver<Vec<u8>>, mut t: TcpStream) -> anyhow::Result<()> {
     let mut buf = [0; BUFSZ];
