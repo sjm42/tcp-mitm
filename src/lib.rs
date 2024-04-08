@@ -1,6 +1,7 @@
 // lib.rs
 
-pub mod config;
 pub use config::*;
+
+pub mod config;
 
 // EOF

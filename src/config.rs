@@ -1,8 +1,9 @@
 // startup.rs
 
+use std::env;
+
 use clap::Parser;
 use log::*;
-use std::env;
 
 #[derive(Clone, Debug, Default, Parser)]
 pub struct OptsCommon {
@@ -18,6 +19,7 @@ pub struct OptsCommon {
     #[arg(long)]
     pub tap: String,
 }
+
 impl OptsCommon {
     pub fn finish(&mut self) -> anyhow::Result<()> {
         // do sanity checking or env var expansion etc...

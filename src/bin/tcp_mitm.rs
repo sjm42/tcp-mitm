@@ -1,11 +1,12 @@
 // bin/tcp_mitm.rs
 
+use std::{net::SocketAddr, time};
+
 use clap::Parser;
 use log::*;
-use std::{net::SocketAddr, time};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{self, TcpStream};
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::mpsc;
 
 use tcp_mitm::*;
@@ -87,7 +88,7 @@ async fn handle_client(
 
     loop {
         tokio::select! {
-            res = client_r.read(&mut buf_c) => {
+                res = client_r.read(&mut buf_c) => {
                 let n = res?;
                 if n == 0 {
                     info!("Client disconnected: {addr:?}");
