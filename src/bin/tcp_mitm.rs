@@ -269,6 +269,9 @@ async fn feed_tap(id: &str, rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream
                     }
                     None => {
                         info!("{id} closed, sender gone.");
+                        // TODO: make this configurable
+                        // hack: send something extra with linefeeds to tap when closing.
+                        tap.write_all("\n<EOF>\n".as_bytes()).await?;
                         return Ok(bytes);
                     }
                 }
