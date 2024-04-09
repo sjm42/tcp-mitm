@@ -1,0 +1,5 @@
+#!/bin/bash
+set -x
+set -e
+cross +nightly build --profile minsize --target mipsel-unknown-linux-musl -Z build-std=std
+# EOF

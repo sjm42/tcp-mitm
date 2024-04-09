@@ -315,6 +315,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "panic-abort"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e20e6499bbbc412f280b04a42346b356c6fa0753d5fd22b7bd752ff34c778ee"
+
+[[package]]
 name = "parking_lot"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -508,13 +514,14 @@ dependencies = [
 
 [[package]]
 name = "tcp-mitm"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "build-data",
  "clap",
  "env_logger",
  "log",
+ "panic-abort",
  "tokio",
 ]
 
