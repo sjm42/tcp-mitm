@@ -2,7 +2,7 @@
 
 [package]
 name = "tcp-mitm"
-version = "0.2.0"
+version = "1.0.0"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "Generic TCP man-in-the-middle proxy with a tap"
 repository = "https://github.com/sjm42/tcp-mitm"
@@ -16,10 +16,12 @@ resolver = "2"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-env_logger = "0"
-log = "0"
-tokio = { version = "1", features = ["full"] }
+futures = "0"
 panic-abort = "0"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0", features = ["net"] }
+tracing = { version = "0", features = ["log"] }
+tracing-subscriber = "0"
 
 
 [build-dependencies]

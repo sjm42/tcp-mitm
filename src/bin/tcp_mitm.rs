@@ -5,11 +5,13 @@ use std::time::Duration;
 
 use anyhow::bail;
 use clap::Parser;
-use log::*;
+use futures::stream::{SelectAll, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{self, tcp::OwnedWriteHalf, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+use tokio_stream::wrappers::TcpListenerStream;
+use tracing::*;
 
 use tcp_mitm::*;
 
@@ -18,9 +20,14 @@ const CHANSZ: usize = 1024;
 
 
 fn main() -> anyhow::Result<()> {
-    let opts = OptsCommon::parse();
-    start_pgm(&opts, "tcp_mitm");
+    let opts = OptsCommon::parse().finalize()?;
+    tracing_subscriber::fmt()
+        .with_max_level(opts.get_loglevel())
+        .with_target(false)
+        .init();
+    start_pgm("tcp_mitm");
 
+    debug!("Going to listen on ports {:?}", opts.ports_v);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -37,13 +44,16 @@ fn main() -> anyhow::Result<()> {
 
 
 async fn run_mitm(opts: &OptsCommon) -> anyhow::Result<()> {
-    let listen = &opts.listen;
-    info!("Listening on {listen}...");
-    let listener = net::TcpListener::bind(&listen).await?;
+    let mut listeners = SelectAll::new();
+    for port in opts.ports_v.iter() {
+        let sock_addr = SocketAddr::new(opts.listen, *port);
+        listeners.push(TcpListenerStream::new(net::TcpListener::bind(sock_addr).await?));
+        info!("Listening on {sock_addr}...");
+    }
 
     let mut i: usize = 0;
-    loop {
-        let (sock, addr) = match listener.accept().await {
+    while let Some(conn) = listeners.next().await {
+        let sock = match conn {
             Err(e) => {
                 error!("accept failed: {e:?}");
                 continue;
@@ -52,43 +62,46 @@ async fn run_mitm(opts: &OptsCommon) -> anyhow::Result<()> {
         };
 
         i += 1;
-        let serv = opts.server;
+        let local_port = sock.local_addr()?.port();
+        let serv = SocketAddr::new(opts.server, local_port);
         let tap = opts.tap;
+        info!("id={i} new connection on port {local_port}" );
+
         tokio::spawn(async move {
-            let ret = handle_client(i, sock, addr, serv, tap).await;
+            let ret = handle_client(sock, serv, tap).instrument(tracing::info_span!("conn", id = i)).await;
             if let Err(e) = ret {
                 // log errors
                 error!("{e:?}");
             }
         });
     }
+    Ok(())
 }
 
 async fn handle_client(
-    i: usize,
     client: TcpStream,
-    addr: SocketAddr,
     serv: SocketAddr,
     tap: SocketAddr,
 ) -> anyhow::Result<()> {
-    info!("#{i} client connection from {addr:?}");
+    let peer = client.peer_addr()?;
+    info!("client connection from {peer:?}", );
 
     let (mut client_r, client_w) = client.into_split();
 
-    info!("#{i} connecting to server {serv}...");
+    info!("connecting to server {serv}...");
     let serv = match timeout(Duration::from_secs(5), TcpStream::connect(serv)).await
     {
         Err(_) => {
-            bail!("#{i} server connection timeout");
+            bail!("server connection timeout");
         }
         Ok(r) => {
             match r {
                 Ok(c) => {
-                    info!("#{i} server connected.");
+                    info!("server connected.");
                     c
                 }
                 Err(e) => {
-                    bail!("#{i} server connection error: {e}");
+                    bail!("server connection error: {e}");
                 }
             }
         }
@@ -99,9 +112,9 @@ async fn handle_client(
     let (serv_tx, serv_rx) = mpsc::channel(CHANSZ);
     let (tap_tx, tap_rx) = mpsc::channel(CHANSZ);
 
-    let t_cw = tokio::spawn(run_tcp_writer(format!("clientW #{i}"), client_rx, client_w));
-    let t_sw = tokio::spawn(run_tcp_writer(format!("servW #{i}"), serv_rx, serv_w));
-    let t_tap = tokio::spawn(handle_tap(format!("tap #{i}"), tap_rx, tap));
+    let t_cw = tokio::spawn(run_tcp_writer(client_rx, client_w).instrument(info_span!("writer", side = "client").or_current()));
+    let t_sw = tokio::spawn(run_tcp_writer(serv_rx, serv_w).instrument(info_span!("writer", side = "server").or_current()));
+    let t_tap = tokio::spawn(handle_tap(tap_rx, tap).instrument(info_span!("tap")));
 
     // https://docs.rs/tokio/1.37.0/tokio/macro.select.html#cancellation-safety
 
@@ -120,17 +133,17 @@ async fn handle_client(
                 let n = match res {
                     Ok(n) => n,
                     Err(e) => {
-                        error!("#{i} client read error: {e}");
+                        error!("client read error: {e}");
                         break;
                     }
                 };
 
                 if n == 0 {
-                    info!("#{i} client disconnected: {addr:?}");
+                    info!("client disconnected");
                     break;
                 }
 
-                debug!("#{i} client read {n}");
+                debug!("client read {n}");
                 bytes_c += n;
                 bytes_t += n;
                 serv_tx.send(buf_c[0..n].to_owned()).await?;
@@ -141,17 +154,17 @@ async fn handle_client(
                 let n = match res {
                     Ok(n) => n,
                     Err(e) => {
-                        error!("#{i} server read error: {e}");
+                        error!("server read error: {e}");
                         break;
                     }
                 };
 
                 if n == 0 {
-                    info!("#{i} server disconnected.");
+                    info!("server disconnected.");
                     break;
                 }
 
-                debug!("#{i} server read {n}");
+                debug!("server read {n}");
                 bytes_s += n;
                 bytes_t += n;
                 client_tx.send(buf_s[0..n].to_owned()).await?;
@@ -159,7 +172,7 @@ async fn handle_client(
             }
 
             else => {
-                error!("#{i} select error");
+                error!("select error");
                 break;
             }
         }
@@ -177,18 +190,16 @@ async fn handle_client(
         t_sw,
         t_tap
     );
-    info!("#{i} client writer status: {r_cw:?}");
-    info!("#{i} server writer status: {r_sw:?}");
-    info!("#{i} tap status: {r_tap:?}");
+    info!("client writer status: {r_cw:?}");
+    info!("server writer status: {r_sw:?}");
+    info!("tap status: {r_tap:?}");
 
-    info!("#{i} client read {bytes_c} bytes, server read {bytes_s} bytes, tapped {bytes_t} bytes.");
-    info!("#{i} connection closed.");
+    info!("Finished: client read {bytes_c} bytes, server read {bytes_s} bytes, tapped {bytes_t} bytes.");
     Ok(())
 }
 
 
 async fn run_tcp_writer(
-    id: String,
     mut c: mpsc::Receiver<Vec<u8>>,
     mut w: OwnedWriteHalf,
 ) -> anyhow::Result<usize> {
@@ -197,30 +208,30 @@ async fn run_tcp_writer(
         w.write_all(&m).await?;
         bytes += m.len();
     }
-    info!("{id} closed.");
+    info!("closed.");
     Ok(bytes)
 }
 
 
-async fn handle_tap(id: String, mut rx: mpsc::Receiver<Vec<u8>>, tap: SocketAddr) -> anyhow::Result<usize> {
+async fn handle_tap(mut rx: mpsc::Receiver<Vec<u8>>, tap: SocketAddr) -> anyhow::Result<usize> {
     let mut bytes: usize = 0;
 
     loop {
-        info!("{id} connecting to tap {tap}...");
+        info!("connecting to tap {tap}...");
         let mut otap = match timeout(Duration::from_secs(2), TcpStream::connect(tap)).await
         {
             Err(_) => {
-                error!("{id} connection timeout");
+                error!("connection timeout");
                 None
             }
             Ok(r) => {
                 match r {
                     Ok(c) => {
-                        info!("{id} tap connected.");
+                        info!("tap connected.");
                         Some(c)
                     }
                     Err(e) => {
-                        error!("{id} connection error: {e}");
+                        error!("connection error: {e}");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         None
                     }
@@ -229,25 +240,25 @@ async fn handle_tap(id: String, mut rx: mpsc::Receiver<Vec<u8>>, tap: SocketAddr
         };
 
         if let Some(tap) = otap.take() {
-            match feed_tap(&id, &mut rx, tap).await {
+            match feed_tap(&mut rx, tap).await {
                 Ok(b) => {
-                    info!("{id} tap closed");
+                    info!("tap closed");
                     bytes += b;
                 }
-                Err(e) => { error!("{id} tap error {e}") }
+                Err(e) => { error!("tap error {e}") }
             }
         }
         // at this point, either receiver is closed or tap is closed/errored
 
         if rx.is_closed() {
-            info!("{id} tap receiver closed.");
+            info!("tap receiver closed.");
             return Ok(bytes);
         }
 
         // flush incoming msgs before new try
         let n_msg = rx.len();
         if n_msg > 0 {
-            info!("{id} flushing {n_msg} messages");
+            info!("flushing {n_msg} messages");
             for _ in 0..n_msg {
                 rx.recv().await;
             }
@@ -255,7 +266,7 @@ async fn handle_tap(id: String, mut rx: mpsc::Receiver<Vec<u8>>, tap: SocketAddr
     }
 }
 
-async fn feed_tap(id: &str, rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream) -> anyhow::Result<usize> {
+async fn feed_tap(rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream) -> anyhow::Result<usize> {
     let mut bytes: usize = 0;
     let mut buf = [0; BUFSZ];
 
@@ -268,7 +279,7 @@ async fn feed_tap(id: &str, rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream
                         bytes += m.len();
                     }
                     None => {
-                        info!("{id} closed, sender gone.");
+                        info!("closed, sender gone.");
                         // TODO: make this configurable
                         // hack: send something extra with linefeeds to tap when closing.
                         tap.write_all("\n<EOF>\n".as_bytes()).await?;
@@ -280,10 +291,10 @@ async fn feed_tap(id: &str, rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream
             res = tap.read(&mut buf) => {
                 let n = res?;
                 if n == 0 {
-                    info!("{id} closed, tap disconnected.");
+                    info!("closed, tap disconnected.");
                     return Ok(bytes);
                 }
-                debug!("{id} tap read {n} (ignored)");
+                debug!("tap read {n} (ignored)");
             }
         }
     }
