@@ -21,11 +21,7 @@ const CHANSZ: usize = 1024;
 
 fn main() -> anyhow::Result<()> {
     let opts = OptsCommon::parse().finalize()?;
-    tracing_subscriber::fmt()
-        .with_max_level(opts.get_loglevel())
-        .with_target(false)
-        .init();
-    start_pgm("tcp_mitm");
+    opts.start_pgm(env!("CARGO_BIN_NAME"));
 
     debug!("Going to listen on ports {:?}", opts.ports_v);
     let runtime = tokio::runtime::Builder::new_multi_thread()

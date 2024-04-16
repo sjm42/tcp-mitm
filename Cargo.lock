@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "tcp-mitm"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "build-data",

@@ -58,14 +58,20 @@ impl OptsCommon {
             Level::INFO
         }
     }
+
+    pub fn start_pgm(&self, name: &str) {
+        tracing_subscriber::fmt()
+            .with_max_level(self.get_loglevel())
+            .with_target(false)
+            .init();
+
+        info!("Starting up {name}...");
+        debug!("Git branch: {}", env!("GIT_BRANCH"));
+        debug!("Git commit: {}", env!("GIT_COMMIT"));
+        debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
+        debug!("Compiler version: {}", env!("RUSTC_VERSION"));
+    }
 }
 
-pub fn start_pgm(desc: &str) {
-    info!("Starting up {desc}...");
-    debug!("Git branch: {}", env!("GIT_BRANCH"));
-    debug!("Git commit: {}", env!("GIT_COMMIT"));
-    debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
-    debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-}
 
 // EOF

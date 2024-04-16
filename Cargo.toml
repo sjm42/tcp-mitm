@@ -2,7 +2,7 @@
 
 [package]
 name = "tcp-mitm"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "Generic TCP man-in-the-middle proxy with a tap"
 repository = "https://github.com/sjm42/tcp-mitm"
@@ -25,7 +25,7 @@ tracing-subscriber = "0"
 
 
 [build-dependencies]
-build-data = "0.1"
+build-data = "0"
 
 
 [profile.release]
