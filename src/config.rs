@@ -5,7 +5,8 @@ use std::net::{IpAddr, SocketAddr};
 
 use anyhow::bail;
 use clap::Parser;
-use tracing::*;
+
+use crate::*;
 
 #[derive(Clone, Debug, Parser)]
 pub struct OptsCommon {
@@ -72,6 +73,4 @@ impl OptsCommon {
         debug!("Compiler version: {}", env!("RUSTC_VERSION"));
     }
 }
-
-
 // EOF

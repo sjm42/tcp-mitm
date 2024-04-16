@@ -11,7 +11,6 @@ use tokio::net::{self, tcp::OwnedWriteHalf, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_stream::wrappers::TcpListenerStream;
-use tracing::*;
 
 use tcp_mitm::*;
 
@@ -295,5 +294,4 @@ async fn feed_tap(rx: &mut mpsc::Receiver<Vec<u8>>, mut tap: TcpStream) -> anyho
         }
     }
 }
-
 // EOF
